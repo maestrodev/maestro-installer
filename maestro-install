@@ -141,11 +141,17 @@ fi
 echo "Loading LuCEE configuration"
 
 # parse the db details from the config
-USER=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.user"`
-PASS=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.pass"`
-HOST=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.host"`
-PORT=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.port"`
-DATABASE=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.database_name"`
+URL=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.url"`
+if [[ $URL != "null" && $URL != "" ]]; then
+    echo "Parsing database URL: $URL"
+    eval $(echo $URL | perl -e 'undef $/; $url = <STDIN>; if ($url =~ m%^postgres://([^:@]+)(:([^:@]+))?@([^:/]+)(:([0-9]+))?/([^/]+)%) { print "USER=$1\nPASS=$3\nHOST=$4\nPORT=$6\nDATABASE=$7\n" }')
+else
+    USER=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.user"`
+    PASS=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.pass"`
+    HOST=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.host"`
+    PORT=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.port"`
+    DATABASE=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.database_name"`
+fi
 
 # attempt to connect to the database
 

@@ -11,6 +11,8 @@ SCRIPT_DIR=`dirname $0`
 HOSTNAME=`hostname -f`
 PGDATA=/var/lib/pgsql/data
 
+MAX_LUCEE_WAIT_TIME=120
+
 # load the account properties
 if [ -e $SCRIPT_DIR/maestro-account.properties ]; then
     echo "Loading account credentials from maestro-account.properties"
@@ -362,6 +364,28 @@ if [[ -z `/sbin/service maestro status | grep 'is running'` ]]; then
 else
     echo "Maestro is running"
 fi
+
+# wait for LuCEE to start
+LUCEE_STARTED=0
+START_TIME=$(date +%s)
+echo -n "Waiting for LuCEE to start..."
+while [ $LUCEE_STARTED -eq 0 ]; do 
+    $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
+
+    if [ $? -ne 0 ]; then
+        echo -n "."
+        END_TIME=$(date +%s)
+        TOTAL_TIME=$(($END_TIME - $START_TIME))
+        if [ $TOTAL_TIME -gt $MAX_LUCEE_WAIT_TIME ]; then
+            echo "\nFailed: LuCEE took too long to start"
+            exit 1
+        fi
+        sleep 5
+    else
+        echo "running"
+        break
+    fi
+done
 
 # install some plugins
 echo "Installing Maestro Plugins"

@@ -16,6 +16,47 @@ MAX_LUCEE_WAIT_TIME=120
 # catch ctrl-c and stop the script from continuing
 trap 'echo "Maestro install interrupted"; exit' INT
 
+# load the account properties from the config dir
+if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
+    echo "Loading account credentials from maestro-account.properties"
+    . $MAESTRO_CONFIG_DIR/maestro-account.properties
+else
+    read -r -p "Maestro Account Username: " USERNAME
+    read -r -p "Maestro Account Password: " PASSWORD
+fi
+
+# verify something was specified
+if [[ $USERNAME == "" || $PASSWORD == "" ]]; then
+    echo "Please enter valid credentials or configure Maestro account credentials in maestro-account.properties"
+    exit 1
+else
+    # create the config directory
+    if [ ! -d $MAESTRO_CONFIG_DIR ]; then
+        mkdir -p $MAESTRO_CONFIG_DIR
+    fi
+
+    # create the account properties file in the config dir
+    cat > $MAESTRO_CONFIG_DIR/maestro-account.properties <<END
+USERNAME=$USERNAME
+PASSWORD=$PASSWORD
+END
+
+    # check the result
+    RETVAL=$?
+    if [ $RETVAL -ne 0 ]; then
+        echo "Failed to save Maestro Account properties to $SCRIPT_DIR"
+        exit 1
+    else
+        echo "Saved Maestro Account properties to $SCRIPT_DIR"
+        chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
+    fi
+fi
+
+if [[ $EUID -ne 0 ]]; then
+    echo "You must be root to run the Maestro install" 2>&1
+    exit 1
+fi
+
 # determine if we're installing snapshot or release versions
 ENABLE_SNAPSHOTS=0
 if [ "$1" == "--snapshots" ]; then
@@ -23,27 +64,6 @@ if [ "$1" == "--snapshots" ]; then
     echo "Installing snapshot versions"
 else
     echo "Installing release versions"
-fi
-
-# load the account properties
-if [ -e $SCRIPT_DIR/maestro-account.properties ]; then
-    echo "Loading account credentials from maestro-account.properties"
-    . maestro-account.properties
-else
-    echo "Please configure your Maestro account credentials in maestro-account.properties"
-    exit 1
-fi
-
-if [[ $USERNAME == "" || $PASSWORD == "" ]]; then
-    echo "Please configure valid Maestro account credentials in maestro-account.properties"
-    exit 1
-else
-    echo "Loaded account credentials from maestro-account.properties"
-fi
-
-if [[ $EUID -ne 0 ]]; then
-    echo "You must be root to run the Maestro install" 2>&1
-    exit 1
 fi
 
 # install latest EPEL
@@ -134,17 +154,6 @@ else
     fi
 fi
 
-# copy the account properties file into the config dir
-cp $SCRIPT_DIR/maestro-account.properties $MAESTRO_CONFIG_DIR
-RETVAL=$?
-if [ $RETVAL -ne 0 ]; then
-    echo "Failed to save Maestro Account properties to $SCRIPT_DIR"
-    exit 1
-else
-    echo "Saved Maestro Account properties to $SCRIPT_DIR"
-    chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
-fi
-
 # create fake server key
 if [ ! -e /var/local/maestro-agent/.maestro/server.key ]; then
     echo "Creating Maestro Agent server.key"
@@ -154,19 +163,41 @@ else
     echo "Found existing Maestro Agent server.key"
 fi
 
+if ! rpm -qa | grep perl-JSON-XS 2>&1 > /dev/null; then
+    echo "Installing Perl JSON::XS"
+    yum -y install perl-JSON-XS
+fi
+
 echo "Loading LuCEE configuration"
 
+function get_db_value {
+PERL=$(cat<<__PERL__
+    use JSON::XS; 
+    undef \$/;
+    \$config = <STDIN>; 
+    \$/ = "\n";
+    my \$json = decode_json \$config; 
+    my \$lucee = \$\$json{'lucee'}; 
+    my \$database = \$\$lucee{'database'};
+    print \$\$database{"$1"};
+    print $1;
+__PERL__
+)
+    cat $MAESTRO_LUCEE_CONFIG | perl -e "$PERL"
+}
+
 # parse the db details from the config
-URL=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.url"`
+URL=`get_db_value "url"`
 if [[ $URL != "null" && $URL != "" ]]; then
     echo "Parsing database URL: $URL"
     eval $(echo $URL | perl -e 'undef $/; $url = <STDIN>; if ($url =~ m%^postgres://([^:@]+)(:([^:@]+))?@([^:/]+)(:([0-9]+))?/([^/]+)%) { print "USER=$1\nPASS=$3\nHOST=$4\nPORT=$6\nDATABASE=$7\n" }')
 else
-    USER=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.user"`
-    PASS=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.pass"`
-    HOST=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.host"`
-    PORT=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.port"`
-    DATABASE=`cat $MAESTRO_LUCEE_CONFIG | $SCRIPT_DIR/jq -r ".lucee.database.database_name"`
+    echo "Not using database URL"
+    USER=`get_db_value "user"`
+    PASS=`get_db_value "pass"`
+    HOST=`get_db_value "host"`
+    PORT=`get_db_value "port"`
+    DATABASE=`get_db_value "database_name"`
 fi
 
 # attempt to connect to the database

@@ -13,6 +13,9 @@ PGDATA=/var/lib/pgsql/data
 
 MAX_LUCEE_WAIT_TIME=120
 
+# catch ctrl-c and stop the script from continuing
+trap 'echo "Maestro install interrupted"; exit' INT
+
 # load the account properties
 if [ -e $SCRIPT_DIR/maestro-account.properties ]; then
     echo "Loading account credentials from maestro-account.properties"

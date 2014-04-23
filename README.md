@@ -8,13 +8,16 @@ Root access
 PostgreSQL database user
 
 
-Installed
----------
-Install script deps:
-* Expect
+Dependencies
+------------
+The following packages / components are installed if not present during installation.
 
-Maestro deps:
-* Maestro YUM Repositories
+Install script:
+* Expect
+* Perl libs
+  * JSON::XS
+
+Maestro:
 * Maestro Server (bundled w/ LuCEE)
 * Maestro Agent
 * PostgreSQL Server
@@ -26,13 +29,16 @@ Maestro deps:
   * LWP
   * JSON::XS
 
+YUM Repos:
+* EPEL
+* Maestro YUM Repositories
 
 Running
 -------
 
-* Untar/Unzip the maestro-installer package
-* Copy maestro-account.properties.example to maestro-account.properties and enter your Maestro Account credentials
-* Run ./maestro-installer and follow the instructions
+* Download & run maestro-installer and follow the provided instructions
+
+NOTE: You will need to provide your Maestro Account credentials
 
 
 PostgreSQL

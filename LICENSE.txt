@@ -1,0 +1,9 @@
+Maestro
+Copyright (c) 2006-2014, MaestroDev. All Rights Reserved.
+
+  Use of this software requires a valid subscription from
+  MaestroDev. Please see http://www.maestrodev.com/eula/
+  for the license agreement associated with this software.
+
+Licenses for Third Party Software can be found in the thirdparty
+directory.

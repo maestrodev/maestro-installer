@@ -42,7 +42,7 @@ The basic PostgreSQL settings for Maestro to connect to PostgreSQL are listed be
 
 /var/lib/pgsql/data/postgresql.conf:
 
-    listen_addresses = 'localhost'    # commend out this line to enable TCP/IP connections
+    listen_addresses = 'localhost'    # comment out this line to enable TCP/IP connections
 
 /var/lib/pgsql/data/pg_hba.conf:
 

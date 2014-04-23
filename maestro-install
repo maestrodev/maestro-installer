@@ -27,7 +27,7 @@ fi
 
 # verify something was specified
 if [[ $USERNAME == "" || $PASSWORD == "" ]]; then
-    echo "Please enter valid credentials or configure Maestro account credentials in maestro-account.properties"
+    echo "Please enter valid credentials or configure Maestro account credentials in $MAESTRO_CONFIG_DIR/maestro-account.properties"
     exit 1
 else
     # create the config directory

@@ -339,7 +339,7 @@ else
 fi
 
 # ensure mongo will start on boot
-/sbin/chkconfig postgresql on
+/sbin/chkconfig mongod on
 
 # ensure mongo is runnning
 if [[ -z `/sbin/service mongod status | grep 'is running'` ]]; then

@@ -17,9 +17,9 @@ MAX_LUCEE_WAIT_TIME=120
 trap 'echo "Maestro install interrupted"; exit' INT
 
 # determine if we're installing snapshot or release versions
-ENABLE_SNAPSHOTS=""
+ENABLE_SNAPSHOTS=0
 if [ "$1" == "--snapshots" ]; then
-    ENABLE_SNAPSHOTS="--enablerepo=maestrodev-snapshots"
+    ENABLE_SNAPSHOTS=1
     echo "Installing snapshot versions"
 else
     echo "Installing release versions"
@@ -97,14 +97,14 @@ cat > /etc/yum.repos.d/maestrodev.repo << EOF
 name=MaestroDev Products EL 6 - \$basearch
 baseurl=https://$USERNAME:$PASSWORD@yum.maestrodev.com/el/6/\$basearch
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-maestrodev
-enabled=0
+enabled=1
 gpgcheck=0
 
 [maestrodev-snapshots]
 name=MaestroDev Snapshots EL 6 - \$basearch
 baseurl=https://$USERNAME:$PASSWORD@yum.maestrodev.com/snapshots/el/6/\$basearch
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-maestrodev
-enabled=0
+enabled=$ENABLE_SNAPSHOTS
 gpgcheck=0
 EOF
 
@@ -113,7 +113,7 @@ if rpm -qa | grep maestro | grep -v agent 2>&1 > /dev/null; then
     echo "Maestro already installed"
 else 
     echo "Installing Maestro"
-    yum -y --enablerepo=maestrodev $ENABLE_SNAPSHOTS install maestro
+    yum -y install maestro
     RETVAL=$?
     if [ $RETVAL -ne 0 ]; then
         echo "Unable to install Maestro package"
@@ -126,7 +126,7 @@ if rpm -qa | grep maestro-agent 2>&1 > /dev/null; then
     echo "Maestro Agent already installed"
 else
     echo "Installing Maestro Agent"
-    yum -y --enablerepo=maestrodev $ENABLE_SNAPSHOTS install maestro-agent
+    yum -y install maestro-agent
     RETVAL=$?
     if [ $RETVAL -ne 0 ]; then
         echo "Unable to install Maestro Agent package"

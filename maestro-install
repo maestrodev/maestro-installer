@@ -319,6 +319,25 @@ else
     esac
 fi
 
+# ensure activemq will start on boot
+/sbin/chkconfig activemq on
+
+# ensure activemq is runnning
+if [[ -z `/sbin/service activemq status | grep 'is running'` ]]; then
+    echo -n "Starting ActiveMQ..."
+    /sbin/service activemq start &> /dev/null
+    RETVAL=$?
+
+    if [ $RETVAL -ne 0 ]; then
+        echo "failed"
+        exit 1
+    fi
+
+    echo "success"
+else
+    echo "ActiveMQ is running"
+fi
+
 # ensure mongo will start on boot
 /sbin/chkconfig postgresql on
 

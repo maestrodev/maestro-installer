@@ -16,6 +16,15 @@ MAX_LUCEE_WAIT_TIME=120
 # catch ctrl-c and stop the script from continuing
 trap 'echo "Maestro install interrupted"; exit' INT
 
+# determine if we're installing snapshot or release versions
+ENABLE_SNAPSHOTS=""
+if [ "$1" == "--snapshots" ]; then
+    ENABLE_SNAPSHOTS="--enablerepo=maestrodev-snapshots"
+    echo "Installing snapshot versions"
+else
+    echo "Installing release versions"
+fi
+
 # load the account properties
 if [ -e $SCRIPT_DIR/maestro-account.properties ]; then
     echo "Loading account credentials from maestro-account.properties"
@@ -79,18 +88,10 @@ else
     echo "Found expect"
 fi
 
-## disable yum priorities, or fails to install puppet in Amazon AMI
-#if [ -e /etc/yum/pluginconf.d/priorities.conf ]
-#  then
-#  cat > /etc/yum/pluginconf.d/priorities.conf <<EOF
-#[main]
-#enabled = 0
-#EOF
-#fi
-
 # add MaestroDev yum repos
 echo "Configuring MaestroDev yum repos"
 
+# add the MaestroDev repositories
 cat > /etc/yum.repos.d/maestrodev.repo << EOF
 [maestrodev]
 name=MaestroDev Products EL 6 - \$basearch
@@ -109,18 +110,28 @@ EOF
 
 # install maestro
 if rpm -qa | grep maestro | grep -v agent 2>&1 > /dev/null; then
-  echo "Maestro already installed"
+    echo "Maestro already installed"
 else 
-  echo "Installing Maestro"
-  yum -y --enablerepo=maestrodev --enablerepo=maestrodev-snapshots install maestro
+    echo "Installing Maestro"
+    yum -y --enablerepo=maestrodev $ENABLE_SNAPSHOTS install maestro
+    RETVAL=$?
+    if [ $RETVAL -ne 0 ]; then
+        echo "Unable to install Maestro package"
+        exit 1
+    fi
 fi
 
 # install maestro agent
 if rpm -qa | grep maestro-agent 2>&1 > /dev/null; then
-  echo "Maestro Agent already installed"
+    echo "Maestro Agent already installed"
 else
-  echo "Installing Maestro Agent"
-  yum -y --enablerepo=maestrodev --enablerepo=maestrodev-snapshots install maestro-agent
+    echo "Installing Maestro Agent"
+    yum -y --enablerepo=maestrodev $ENABLE_SNAPSHOTS install maestro-agent
+    RETVAL=$?
+    if [ $RETVAL -ne 0 ]; then
+        echo "Unable to install Maestro Agent package"
+        exit 1
+    fi
 fi
 
 # copy the account properties file into the config dir
@@ -387,27 +398,37 @@ else
     echo "Maestro is running"
 fi
 
-# wait for LuCEE to start
-LUCEE_STARTED=0
-START_TIME=$(date +%s)
-echo -n "Waiting for LuCEE to start..."
-while [ $LUCEE_STARTED -eq 0 ]; do 
-    $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
+echo -n "Checking if LuCEE is available for plugin installation..."
 
-    if [ $? -ne 0 ]; then
-        echo -n "."
-        END_TIME=$(date +%s)
-        TOTAL_TIME=$(($END_TIME - $START_TIME))
-        if [ $TOTAL_TIME -gt $MAX_LUCEE_WAIT_TIME ]; then
-            echo "\nFailed: LuCEE took too long to start"
-            exit 1
+# check if LuCEE is ready to install plugins
+$MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "not ready"
+
+    # wait for LuCEE to start
+    LUCEE_STARTED=0
+    START_TIME=$(date +%s)
+    echo -n "Waiting for LuCEE to become available..."
+    while [ $LUCEE_STARTED -eq 0 ]; do 
+        $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
+    
+        if [ $? -ne 0 ]; then
+            echo -n "."
+            END_TIME=$(date +%s)
+            TOTAL_TIME=$(($END_TIME - $START_TIME))
+            if [ $TOTAL_TIME -gt $MAX_LUCEE_WAIT_TIME ]; then
+                echo "\nFailed: LuCEE took too long to start"
+                exit 1
+            fi
+            sleep 5
+        else
+            echo "running"
+            break
         fi
-        sleep 5
-    else
-        echo "running"
-        break
-    fi
-done
+    done
+else
+    echo "ready"
+fi
 
 # install some plugins
 echo "Installing Maestro Plugins"

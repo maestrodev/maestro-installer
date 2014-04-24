@@ -100,20 +100,6 @@ else
     echo "Detected configured EPEL yum repos"
 fi
 
-if ! rpm -qa | grep -qw expect; then
-    # install expect for latest
-    echo "Installing expect..."
-    yum --enablerepo=epel -y install expect
-    RETVAL=$?
-    if [ $RETVAL -ne 0 ]; then
-        echo "failed"
-        exit 1
-    fi
-    echo "success"
-else
-    echo "Found expect"
-fi
-
 # add MaestroDev yum repos
 echo "Configuring MaestroDev yum repos"
 
@@ -290,16 +276,9 @@ else
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro PostgreSQL user..."
-            EXEC=$(expect -c "
-            spawn su - postgres -c \"createuser --no-createdb --no-createrole --no-superuser -P maestro\"
-            expect \"Enter password for new role: \"
-            send \"$PASS\r\"
-            expect \"Enter it again: \"
-            send \"$PASS\r\"
-            interact
-            ")
-            RETVAL=$?
+            su - postgres -c "psql -c \"CREATE ROLE $USER UNENCRYPTED PASSWORD '$PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" &> /dev/null
 
+            RETVAL=$?
             if [ $RETVAL -ne 0 ]; then
                 echo "failed"
                 exit 1
@@ -315,16 +294,15 @@ else
 fi
 
 # check for maestro db
-OUTPUT=`PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER maestro 2>&1`
+PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER maestro &> /dev/null
 if [ $? -eq 0 ]; then
     echo "Maestro database found"
 else
-    echo $OUTPUT
     read -u 1 -r -p "Would you like to create the Maestro database now? [y/N] " response
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro PostgreSQL database..."
-            su - postgres -c "createdb -O maestro maestro"
+            su - postgres -c "createdb -O maestro maestro" &> /dev/null
             RETVAL=$?
 
             if [ $RETVAL -ne 0 ]; then
@@ -343,16 +321,15 @@ else
 fi
 
 # check for luceedb db
-OUTPUT=`PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER $DATABASE 2>&1`
+PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER $DATABASE &> /dev/null
 if [ $? -eq 0 ]; then
     echo "Maestro LuCEE database found"
 else
-    echo $OUTPUT
     read -u 1 -r -p "Would you like to create the Maestro LuCEE database now? [y/N] " response
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro LuCEE PostgreSQL database..."
-            su - postgres -c "createdb -O maestro $DATABASE"
+            su - postgres -c "createdb -O maestro $DATABASE" &> /dev/null
             RETVAL=$?
 
             if [ $RETVAL -ne 0 ]; then

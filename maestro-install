@@ -60,13 +60,12 @@ END
         exit 1
     else
         echo "Saved Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
-        chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
     fi
 fi
 
 # determine if we're installing snapshot or release versions
 ENABLE_SNAPSHOTS=0
-if [ "$1" == "--snapshots" ]; then
+if [ "$1" == "snapshots" ]; then
     ENABLE_SNAPSHOTS=1
     echo "Installing snapshot versions"
 else
@@ -147,6 +146,9 @@ else
         exit 1
     fi
 fi
+
+# now that we have our maestro user, chown the account properties file
+chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
 
 # install maestro agent
 if rpm -qa | grep maestro-agent 2>&1 > /dev/null; then

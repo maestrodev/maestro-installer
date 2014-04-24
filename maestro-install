@@ -33,8 +33,8 @@ if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
     . $MAESTRO_CONFIG_DIR/maestro-account.properties
 else
     echo "Please provide your Maestro Account credentials"
-    read -r -p "Username: " USERNAME
-    read -s -r -p "Password: " PASSWORD; echo
+    read -u 1 -r -p "Username: " USERNAME
+    read -u 1 -s -r -p "Password: " PASSWORD; echo
 fi
 
 # verify something was specified
@@ -284,7 +284,7 @@ else
     fi
 
     echo "No valid Maestro PostgreSQL user found"
-    read -r -p "Would you like to configure a Maestro PostgreSQL user now? [y/N] " response
+    read -u 1 -r -p "Would you like to configure a Maestro PostgreSQL user now? [y/N] " response
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro PostgreSQL user..."
@@ -318,7 +318,7 @@ if [ $? -eq 0 ]; then
     echo "Maestro database found"
 else
     echo $OUTPUT
-    read -r -p "Would you like to create the Maestro database now? [y/N] " response
+    read -u 1 -r -p "Would you like to create the Maestro database now? [y/N] " response
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro PostgreSQL database..."
@@ -346,7 +346,7 @@ if [ $? -eq 0 ]; then
     echo "Maestro LuCEE database found"
 else
     echo $OUTPUT
-    read -r -p "Would you like to create the Maestro LuCEE database now? [y/N] " response
+    read -u 1 -r -p "Would you like to create the Maestro LuCEE database now? [y/N] " response
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro LuCEE PostgreSQL database..."
@@ -481,4 +481,3 @@ echo "Installed Maestro Plugins"
 echo "Installation complete."
 echo "Please check logs in $MAESTRO_BASE/logs and $MAESTRO_AGENT_BASE/logs for troubleshooting."
 echo "Ensure that your firewall is configured to allow remote access to port 8080 and browse to http://$HOSTNAME:8080/"
-

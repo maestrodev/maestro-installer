@@ -449,7 +449,11 @@ fi
 
 # install some plugins
 echo "Installing Maestro Plugins"
-$MAESTRO_BIN/maestro-plugins install all
+if [ $ENABLE_SNAPSHOTS -eq 0 ]; then
+    $MAESTRO_BIN/maestro-plugins install all
+else
+    $MAESTRO_BIN/maestro-plugins --snapshots install all
+fi
 RETVAL=$?
 if [ $RETVAL -ne 0 ]; then
     echo "Failed to install Maestro Plugins"

@@ -22,12 +22,12 @@ if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
     . $MAESTRO_CONFIG_DIR/maestro-account.properties
 else
     read -r -p "Maestro Account Username: " USERNAME
-    read -r -p "Maestro Account Password: " PASSWORD
+    read -s -r -p "Maestro Account Password: " PASSWORD
 fi
 
 # verify something was specified
 if [[ $USERNAME == "" || $PASSWORD == "" ]]; then
-    echo "Please enter valid credentials or configure Maestro account credentials in $MAESTRO_CONFIG_DIR/maestro-account.properties"
+    echo "Please enter valid credentials or configure Maestro account credentials in maestro-account.properties"
     exit 1
 else
     # create the config directory

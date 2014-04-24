@@ -7,7 +7,6 @@ MAESTRO_CONFIG_DIR=$MAESTRO_CONFIG_BASE/conf
 MAESTRO_LUCEE_CONFIG="$MAESTRO_CONFIG_DIR/maestro_lucee.json"
 MAESTRO_AGENT_BASE=/var/local/maestro-agent
 
-SCRIPT_DIR=`dirname $0` 
 HOSTNAME=`hostname -f`
 PGDATA=/var/lib/pgsql/data
 
@@ -18,7 +17,7 @@ trap 'echo "Maestro install interrupted"; exit' INT
 
 # load the account properties from the config dir
 if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
-    echo "Loading account credentials from maestro-account.properties"
+    echo "Loading account credentials from $MAESTRO_CONFIG_DIR/maestro-account.properties"
     . $MAESTRO_CONFIG_DIR/maestro-account.properties
 else
     read -r -p "Maestro Account Username: " USERNAME
@@ -27,7 +26,7 @@ fi
 
 # verify something was specified
 if [[ $USERNAME == "" || $PASSWORD == "" ]]; then
-    echo "Please enter valid credentials or configure Maestro account credentials in maestro-account.properties"
+    echo "Please enter valid credentials or configure Maestro account credentials in $MAESTRO_CONFIG_DIR/maestro-account.properties"
     exit 1
 else
     # create the config directory
@@ -44,10 +43,10 @@ END
     # check the result
     RETVAL=$?
     if [ $RETVAL -ne 0 ]; then
-        echo "Failed to save Maestro Account properties to $SCRIPT_DIR"
+        echo "Failed to save Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
         exit 1
     else
-        echo "Saved Maestro Account properties to $SCRIPT_DIR"
+        echo "Saved Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
         chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
     fi
 fi

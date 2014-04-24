@@ -36,7 +36,7 @@ YUM Repos:
 Running
 -------
 
-* bash <(curl -sSL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install) **OR**
+* bash <(curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install) **OR**
 * Download & run maestro-installer and follow the provided instructions
 
 NOTE: You will need to provide your Maestro Account credentials

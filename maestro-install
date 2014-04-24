@@ -15,13 +15,26 @@ MAX_LUCEE_WAIT_TIME=120
 # catch ctrl-c and stop the script from continuing
 trap 'echo "Maestro install interrupted"; exit' INT
 
+# detect proper os version
+if [ ! -f /etc/redhat-release ]; then
+    echo "This script requires RHEL/CentOS 6.4+"
+    exit 1
+fi
+
+# verify root
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run with root privileges" 2>&1
+    exit 1
+fi
+
 # load the account properties from the config dir
 if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
     echo "Loading account credentials from $MAESTRO_CONFIG_DIR/maestro-account.properties"
     . $MAESTRO_CONFIG_DIR/maestro-account.properties
 else
-    read -r -p "Maestro Account Username: " USERNAME
-    read -s -r -p "Maestro Account Password: " PASSWORD
+    echo "Please provide your Maestro Account credentials"
+    read -r -p "Username: " USERNAME
+    read -s -r -p "Password: " PASSWORD; echo
 fi
 
 # verify something was specified
@@ -49,11 +62,6 @@ END
         echo "Saved Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
         chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
     fi
-fi
-
-if [[ $EUID -ne 0 ]]; then
-    echo "You must be root to run the Maestro install" 2>&1
-    exit 1
 fi
 
 # determine if we're installing snapshot or release versions

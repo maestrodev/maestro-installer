@@ -27,21 +27,52 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# load the account properties from the config dir
-if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
-    echo "Loading account credentials from $MAESTRO_CONFIG_DIR/maestro-account.properties"
-    . $MAESTRO_CONFIG_DIR/maestro-account.properties
-else
+valid_credentials() {
+    STATUS_CODE=`curl -o /dev/null --silent --head --write-out '%{http_code}\n' https://$USERNAME:$PASSWORD@yum.maestrodev.com/`
+    if [ $STATUS_CODE -ne "200" ]; then
+        return 1
+    fi
+    return 0
+}
+
+prompt_credentials() {
     echo "Please provide your Maestro Account credentials"
     read -u 1 -r -p "Username: " USERNAME
     read -u 1 -s -r -p "Password: " PASSWORD; echo
+}
+
+# load the account properties from the config dir
+HAVE_ACCOUNT_CONFIG=0
+OVERRIDE_CONFIG=0
+if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
+    HAVE_ACCOUNT_CONFIG=1
+
+    echo "Loading account credentials from $MAESTRO_CONFIG_DIR/maestro-account.properties"
+    . $MAESTRO_CONFIG_DIR/maestro-account.properties
+
+    if ! valid_credentials; then
+        echo "Invalid credentials specified"
+        prompt_credentials
+        OVERRIDE_CONFIG=1
+    fi
+else
+    prompt_credentials
 fi
 
-# verify something was specified
-if [[ $USERNAME == "" || $PASSWORD == "" ]]; then
-    echo "Please enter valid credentials or configure Maestro account credentials in $MAESTRO_CONFIG_DIR/maestro-account.properties"
+# if no valid credentials, notify user and exit
+if ! valid_credentials; then
+    if [ $HAVE_ACCOUNT_CONFIG -eq 1 ]; then 
+        echo "Invalid credentials.  Please adjust the username/password in $MAESTRO_CONFIG_DIR/maestro-account.properties"
+    else
+        echo "Invalid credentials specified."
+    fi
     exit 1
-else
+fi
+
+# if the user doesn't already have credentials saved
+if [[ ! -e $MAESTRO_CONFIG_DIR/maestro-account.properties || $OVERRIDE_CONFIG -eq 1 ]]; then
+    echo "Saving account credentials to $MAESTRO_CONFIG_DIR/maestro-account.properties"
+
     # create the config directory
     if [ ! -d $MAESTRO_CONFIG_DIR ]; then
         mkdir -p $MAESTRO_CONFIG_DIR
@@ -58,8 +89,6 @@ END
     if [ $RETVAL -ne 0 ]; then
         echo "Failed to save Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
         exit 1
-    else
-        echo "Saved Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
     fi
 fi
 

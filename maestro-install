@@ -10,7 +10,7 @@ MAESTRO_AGENT_BASE=/var/local/maestro-agent
 HOSTNAME=`hostname -f`
 PGDATA=/var/lib/pgsql/data
 
-MAX_LUCEE_WAIT_TIME=120
+MAX_LUCEE_WAIT_TIME=300
 
 # catch ctrl-c and stop the script from continuing
 trap 'echo "Maestro install interrupted"; exit' INT

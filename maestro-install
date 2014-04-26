@@ -27,6 +27,51 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+main() {
+    load_credentials
+
+    check_enable_snapshots
+    install_epel_repo
+    install_maestrodev_repo
+    install_maestro
+
+    save_credentials
+    
+    install_maestro_agent
+
+     # test for java
+    #ensure_javac
+    #ensure_package_installed 'java7-devel'
+
+    load_lucee_config
+    if [ is_local_db ]; then
+        echo "Using local PostgreSQL"
+        verify_db_installation
+    fi
+
+    if [ ! verify_db_user ]; then
+        create_db_user
+    fi
+    ensure_db_exists $DB_DATABASE
+    ensure_db_exists 'maestro'
+    
+    if [ is_local_stomp ]; then
+        echo "Using local ActiveMQ"
+        ensure_service_running 'activemq'
+    fi
+    verify_stomp
+    
+    ensure_service_running 'mongod'
+    ensure_service_running 'maestro-agent'
+    ensure_service_running 'maestro'
+
+    install_maestro_plugins
+    
+    echo "Installation complete."
+    echo "Please check logs in $MAESTRO_BASE/logs and $MAESTRO_AGENT_BASE/logs for troubleshooting."
+    echo "Ensure that your firewall is configured to allow remote access to port 8080 and browse to http://$HOSTNAME:8080/"
+}
+
 valid_credentials() {
     STATUS_CODE=`curl -o /dev/null --silent --head --write-out '%{http_code}\n' https://$USERNAME:$PASSWORD@yum.maestrodev.com/`
     if [ $STATUS_CODE -ne "200" ]; then
@@ -41,71 +86,82 @@ prompt_credentials() {
     read -u 1 -s -r -p "Password: " PASSWORD; echo
 }
 
-# load the account properties from the config dir
-HAVE_ACCOUNT_CONFIG=0
-OVERRIDE_CONFIG=0
-if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
-    HAVE_ACCOUNT_CONFIG=1
-
-    echo "Loading account credentials from $MAESTRO_CONFIG_DIR/maestro-account.properties"
-    . $MAESTRO_CONFIG_DIR/maestro-account.properties
-
-    if ! valid_credentials; then
-        echo "Invalid credentials specified"
-        prompt_credentials
-        OVERRIDE_CONFIG=1
-    fi
-else
-    prompt_credentials
-fi
-
-# if no valid credentials, notify user and exit
-if ! valid_credentials; then
-    if [ $HAVE_ACCOUNT_CONFIG -eq 1 ]; then 
-        echo "Invalid credentials.  Please adjust the username/password in $MAESTRO_CONFIG_DIR/maestro-account.properties"
+load_credentials() {
+    # load the account properties from the config dir
+    HAVE_ACCOUNT_CONFIG=0
+    OVERRIDE_CONFIG=0
+    if [ -e $MAESTRO_CONFIG_DIR/maestro-account.properties ]; then
+        HAVE_ACCOUNT_CONFIG=1
+    
+        echo "Loading account credentials from '$MAESTRO_CONFIG_DIR/maestro-account.properties'"
+        . $MAESTRO_CONFIG_DIR/maestro-account.properties
+    
+        if ! valid_credentials; then
+            echo "Invalid credentials specified"
+            prompt_credentials
+            OVERRIDE_CONFIG=1
+        fi
     else
-        echo "Invalid credentials specified."
+        echo "No credentials in config"
+        prompt_credentials
     fi
-    exit 1
-fi
-
-# if the user doesn't already have credentials saved
-if [[ ! -e $MAESTRO_CONFIG_DIR/maestro-account.properties || $OVERRIDE_CONFIG -eq 1 ]]; then
-    echo "Saving account credentials to $MAESTRO_CONFIG_DIR/maestro-account.properties"
-
-    # create the config directory
-    if [ ! -d $MAESTRO_CONFIG_DIR ]; then
-        mkdir -p $MAESTRO_CONFIG_DIR
+    
+    # if no valid credentials, notify user and exit
+    if ! valid_credentials; then
+        if [ $HAVE_ACCOUNT_CONFIG -eq 1 ]; then 
+            echo "Invalid credentials.  Please adjust the username/password in '$MAESTRO_CONFIG_DIR/maestro-account.properties'"
+        else
+            echo "Invalid credentials specified."
+        fi
+        exit 1
     fi
+}
 
-    # create the account properties file in the config dir
-    cat > $MAESTRO_CONFIG_DIR/maestro-account.properties <<END
+save_credentials() {
+    # if the user doesn't already have credentials saved
+    if [[ ! -e $MAESTRO_CONFIG_DIR/maestro-account.properties || $OVERRIDE_CONFIG -eq 1 ]]; then
+        echo "Saving account credentials to '$MAESTRO_CONFIG_DIR/maestro-account.properties'"
+    
+        # create the config directory
+        if [ ! -d $MAESTRO_CONFIG_DIR ]; then
+            mkdir -p $MAESTRO_CONFIG_DIR
+        fi
+    
+        # create the account properties file in the config dir
+        cat > $MAESTRO_CONFIG_DIR/maestro-account.properties <<END
 USERNAME=$USERNAME
 PASSWORD=$PASSWORD
 END
-
-    # check the result
-    RETVAL=$?
-    if [ $RETVAL -ne 0 ]; then
-        echo "Failed to save Maestro Account properties to $MAESTRO_CONFIG_DIR/maestro-account.properties"
-        exit 1
+    
+        # check the result
+        RETVAL=$?
+        if [ $RETVAL -ne 0 ]; then
+            echo "Failed to save Maestro Account properties to '$MAESTRO_CONFIG_DIR/maestro-account.properties'"
+            exit 1
+        fi
     fi
-fi
+    
+    # now that we have our maestro user, chown the account properties file
+    chown maestro:maestro "$MAESTRO_CONFIG_DIR/maestro-account.properties"
+}
 
-# determine if we're installing snapshot or release versions
-ENABLE_SNAPSHOTS=0
-if [ "$1" == "snapshots" ]; then
-    ENABLE_SNAPSHOTS=1
-    echo "Installing snapshot versions"
-else
-    echo "Installing release versions"
-fi
+check_enable_snapshots() {
+    # determine if we're installing snapshot or release versions
+    ENABLE_SNAPSHOTS=0
+    if [ "$1" == "snapshots" ]; then
+        ENABLE_SNAPSHOTS=1
+        echo "Installing snapshot versions"
+    else
+        echo "Installing release versions"
+    fi
+}
 
-# install latest EPEL
-if [ ! -e /etc/yum.repos.d/epel.repo ]; then
-    echo -n "Installing latest EPEL yum repo RPM..."
-
-    cat <<EOM >/etc/yum.repos.d/epel-bootstrap.repo
+install_epel_repo() {
+    # install latest EPEL
+    if [ ! -e /etc/yum.repos.d/epel.repo ]; then
+        echo -n "Installing latest EPEL yum repo RPM..."
+    
+        cat <<EOM >/etc/yum.repos.d/epel-bootstrap.repo
 [epel]
 name=Bootstrap EPEL
 mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=epel-6&arch=x86_64
@@ -113,27 +169,29 @@ failovermethod=priority
 enabled=0
 gpgcheck=0
 EOM
-
-    # install the latest EPEL release
-    yum --enablerepo=epel -y install epel-release
-    RETVAL=$?
-    if [ $RETVAL -ne 0 ]; then
-        echo "failed"
-        exit 1
+    
+        # install the latest EPEL release
+        yum --enablerepo=epel -y install epel-release
+        RETVAL=$?
+        if [ $RETVAL -ne 0 ]; then
+            echo "failed"
+            exit 1
+        fi
+        echo "success"
+    
+        # remove the EPEL bootstrap yum repo
+        rm -f /etc/yum.repos.d/epel-bootstrap.repo
+    else
+        echo "Detected configured EPEL yum repos"
     fi
-    echo "success"
+}
 
-    # remove the EPEL bootstrap yum repo
-    rm -f /etc/yum.repos.d/epel-bootstrap.repo
-else
-    echo "Detected configured EPEL yum repos"
-fi
-
-# add MaestroDev yum repos
-echo "Configuring MaestroDev yum repos"
-
-# add the MaestroDev repositories
-cat > /etc/yum.repos.d/maestrodev.repo << EOF
+install_maestrodev_repo() {
+    # add MaestroDev yum repos
+    echo "Configuring MaestroDev yum repos"
+    
+    # add the MaestroDev repositories
+    cat > /etc/yum.repos.d/maestrodev.repo << EOF
 [maestrodev]
 name=MaestroDev Products EL 6 - \$basearch
 baseurl=https://$USERNAME:$PASSWORD@yum.maestrodev.com/el/6/\$basearch
@@ -148,164 +206,247 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-maestrodev
 enabled=$ENABLE_SNAPSHOTS
 gpgcheck=0
 EOF
+}
 
-# install maestro
-if rpm -qa | grep maestro | grep -v agent 2>&1 > /dev/null; then
-    echo "Maestro already installed"
-else 
-    echo "Installing Maestro"
-    yum -y install maestro
-    RETVAL=$?
-    if [ $RETVAL -ne 0 ]; then
-        echo "Unable to install Maestro package"
-        exit 1
+install_maestro() {
+    ensure_package_installed 'maestro'
+}
+
+install_maestro_agent() {
+    ensure_package_installed 'maestro-agent'
+
+    # create fake server key
+    if [ ! -e /var/local/maestro-agent/.maestro/server.key ]; then
+        echo "Creating Maestro Agent server.key"
+        mkdir -p $MAESTRO_AGENT_BASE/.maestro
+        echo "server.key" > $MAESTRO_AGENT_BASE/.maestro/server.key
+    else
+        echo "Found existing Maestro Agent server.key"
     fi
-fi
-
-# now that we have our maestro user, chown the account properties file
-chown maestro:maestro $MAESTRO_CONFIG_DIR/maestro-account.properties
-
-# install maestro agent
-if rpm -qa | grep maestro-agent 2>&1 > /dev/null; then
-    echo "Maestro Agent already installed"
-else
-    echo "Installing Maestro Agent"
-    yum -y install maestro-agent
-    RETVAL=$?
-    if [ $RETVAL -ne 0 ]; then
-        echo "Unable to install Maestro Agent package"
-        exit 1
-    fi
-fi
-
-# create fake server key
-if [ ! -e /var/local/maestro-agent/.maestro/server.key ]; then
-    echo "Creating Maestro Agent server.key"
-    mkdir -p $MAESTRO_AGENT_BASE/.maestro
-    echo "server.key" > $MAESTRO_AGENT_BASE/.maestro/server.key
-else
-    echo "Found existing Maestro Agent server.key"
-fi
-
-if ! rpm -qa | grep perl-JSON-XS 2>&1 > /dev/null; then
-    echo "Installing Perl JSON::XS"
-    yum -y install perl-JSON-XS
-fi
-
-echo "Loading LuCEE configuration"
-
-function get_db_value {
-PERL=$(cat<<__PERL__
-    use JSON::XS; 
-    undef \$/;
-    \$config = <STDIN>; 
-    \$/ = "\n";
-    my \$json = decode_json \$config; 
-    my \$lucee = \$\$json{'lucee'}; 
-    my \$database = \$\$lucee{'database'};
-    print \$\$database{"$1"};
-    print $1;
+}
+    
+get_db_value() {
+    PERL=$(cat<<__PERL__
+use JSON::XS; 
+undef \$/;
+\$config = <STDIN>; 
+\$/ = "\n";
+my \$json = decode_json \$config; 
+my \$lucee = \$\$json{'lucee'}; 
+my \$database = \$\$lucee{'database'};
+print \$\$database{"$1"};
+print $1;
 __PERL__
-)
+    )
+    cat $MAESTRO_LUCEE_CONFIG | perl -e "$PERL"
+}
+    
+get_stomp_value() {
+    PERL=$(cat<<__PERL__
+use JSON::XS; 
+undef \$/;
+\$config = <STDIN>; 
+\$/ = "\n";
+my \$json = decode_json \$config; 
+my \$lucee = \$\$json{'lucee'}; 
+my \$database = \$\$lucee{'stomp'};
+print \$\$database{"$1"};
+print $1;
+__PERL__
+    )
     cat $MAESTRO_LUCEE_CONFIG | perl -e "$PERL"
 }
 
-# parse the db details from the config
-URL=`get_db_value "url"`
-if [[ $URL != "null" && $URL != "" ]]; then
-    echo "Parsing database URL: $URL"
-    eval $(echo $URL | perl -e 'undef $/; $url = <STDIN>; if ($url =~ m%^postgres://([^:@]+)(:([^:@]+))?@([^:/]+)(:([0-9]+))?/([^/]+)%) { print "USER=$1\nPASS=$3\nHOST=$4\nPORT=$6\nDATABASE=$7\n" }')
-else
-    echo "Not using database URL"
-    USER=`get_db_value "user"`
-    PASS=`get_db_value "pass"`
-    HOST=`get_db_value "host"`
-    PORT=`get_db_value "port"`
-    DATABASE=`get_db_value "database_name"`
-fi
+load_lucee_config() {
+    echo "Loading LuCEE configuration"
 
-# attempt to connect to the database
+    ensure_package_installed 'perl-JSON-XS'
+    
+    # parse the db details from the config
+    URL=`get_db_value "url"`
+    if [[ $URL != "null" && $URL != "" ]]; then
+        echo "Parsing database URL: $URL"
+        eval $(echo $URL | perl -e 'undef $/; $url = <STDIN>; if ($url =~ m%^postgres://([^:@]+)(:([^:@]+))?@([^:/]+)(:([0-9]+))?/([^/]+)%) { print "DB_USER=$1\nDB_PASS=$3\nDB_HOST=$4\nDB_PORT=$6\nDB_DATABASE=$7\n" }')
+    else
+        #echo "Not using database URL"
+        DB_USER=`get_db_value "user"`
+        DB_PASS=`get_db_value "pass"`
+        DB_HOST=`get_db_value "host"`
+        DB_PORT=`get_db_value "port"`
+        DB_DATABASE=`get_db_value "database_name"`
+    fi
+    
+    # parse the stomp details from the config
+    URL=`get_stomp_value "url"`
+    if [[ $URL != "null" && $URL != "" ]]; then
+        echo "Parsing stomp URL: $URL"
+        eval $(echo $URL | perl -e 'undef $/; $url = <STDIN>; if ($url =~ m%^stomp://([^:@]+)(:([^:@]+))?@([^:/]+)(:([0-9]+))?%) { print "STOMP_USER=$1\nSTOMP_PASS=$3\nSTOMP_HOST=$4\nSTOMP_PORT=$6\n" }')
+    else
+        #echo "Not using stomp URL"
+        STOMP_USER=`get_stomp_value "user"`
+        STOMP_PASS=`get_stomp_value "passcode"`
+        STOMP_HOST=`get_stomp_value "host"`
+        STOMP_PORT=`get_stomp_value "port"`
+    fi
+}
+    
+is_local_db() {
+    if [[ $DB_HOST == "localhost" || $DB_HOST == "127.0.0.1" ]]; then
+        return 1
+    fi
+    return 0
+}
+    
+is_local_stomp() {
+    if [ $STOMP_HOST == "localhost" ] || [ $STOMP_HOST == "127.0.0.1" ]; then
+        return 1
+    fi
+    return 0
+}
 
-echo "Checking PostgreSQL installation"
-PSQL_COMMAND=`command -v psql`
+verify_stomp() {
+    # attempt to connect to the stomp server
+    
+    echo "Checking Stomp connectivity"
 
-# determine if psql exists
-if [ -z $PSQL_COMMAND ]; then
-    echo "PostgreSQL binaries not found.  Check to ensrure that PostgreSQL is installed."
-    exit 1
-else
-    echo "Using PostgreSQL command: $PSQL_COMMAND"
-fi
+    ensure_package_installed 'perl-Net-Stomp'
 
-# ensure postgresql is set to start on startup
-/sbin/chkconfig postgresql on
+    PERL=$(cat<<"__PERL__"
+use Net::Stomp;
+my $host = shift @ARGV;
+my $port = shift @ARGV;
+my $user = shift @ARGV;
+my $pass = shift @ARGV;
+my $stomp = Net::Stomp->new( { hostname => $host, port => $port } );
+my $con = $stomp->connect( { 
+    login => $user, 
+    passcode => $pass,
+    timeout => 1.0
+} );
+if ($con->command ne "CONNECTED") {
+   print "Error connecting via STOMP\n";
+   exit 1;
+} else {
+    print "Connection via STOMP okay\n";
+}
+my @queues = ('/topic/plugin_status', '/queue/agents', '/queue/ruote_workitems', '/queue/maestro.agent.testagentqueue');
+foreach my $queue (@queues) {
+    my $s = $stomp->subscribe(
+        {
+            'destination'           => $queue,
+            'ack'                   => 'client',
+            'activemq.prefetchSize' => 1,
+            'selector'              => "command = 'ERROR'"
+        }
+    );
+    my $frame = $stomp->receive_frame({ timeout => 1.0 });
+    if (defined($frame)) {
+        if ($frame->command eq "ERROR") {
+            my $body = $frame->body;
+            if ($body =~ /not authorized/) {
+                $stomp->ack( { frame => $frame } );
+                print "Permission denied for '$queue'\n";
+            } else {
+                print "Error connecting to '$queue'\n";
+            }
+            exit 1;
+        }
+    } else {
+        print "Queue '$queue' okay\n";
+    }
+}
+$stomp->disconnect();
+__PERL__
+    )
+    perl -e "$PERL" $STOMP_HOST $STOMP_PORT $STOMP_USER $STOMP_PASS
 
-# ensure postgresql is runnning
-if [[ -z `/sbin/service postgresql status | grep 'is running'` ]]; then
-    echo -n "Starting PostgreSQL..."
-    /sbin/service postgresql start &> /dev/null 2>&1
     RETVAL=$?
 
     if [ $RETVAL -ne 0 ]; then
+        echo "Failed to connect to STOMP server host=$STOMP_HOST port=$STOMP_PORT user=$STOMP_USER.  Please check your LuCEE configuration at '$MAESTRO_LUCEE_CONFIG'"
+        exit 1
+    fi
+}
 
-	if [ -f "$PGDATA/PG_VERSION" ] && [ -d "$PGDATA/base" ]; then
-            echo "failed"
-            exit 1
-        else
-            echo "not yet initialized"
+verify_db_installation() {
+    # attempt to connect to the database
+    
+    echo "Checking PostgreSQL installation"
+    PSQL_COMMAND=`command -v psql`
+    
+    # determine if psql exists
+    if [ -z $PSQL_COMMAND ]; then
+        echo "No PostgreSQL found, installing"
 
-            # try to initialize the database first
-            /sbin/service postgresql initdb
-            RETVAL=$?
+        # install the default postgresql package for CentOS if nothign is currently installed
+        ensure_package_installed 'postgresql-server'
         
-            if [ $RETVAL -ne 0 ]; then
-                echo "Failed to initialize PostgreSQL"
-                exit 1
-            fi
+        # ensure postgresql is set to start on startup
+        /sbin/chkconfig postgresql on
 
-            # try to start it again
-            echo -n "Starting PostgreSQL..."
-            /sbin/service postgresql start &> /dev/null 2>&1
+        # ensure that it's running
+        ensure_service_running 'postgresql'
+
+        # verify that we're initialized
+        if [ ! -f "$PGDATA/PG_VERSION" ] || [ ! -d "$PGDATA/base" ]; then
+            echo -n "Initializing PostgreSQL..."
+    
+            # try to initialize the database first
+            /sbin/service postgresql initdb &> /dev/null
             RETVAL=$?
         
             if [ $RETVAL -ne 0 ]; then
                 echo "failed"
                 exit 1
             fi
+            echo "success"
         fi
-    else
-        echo "done"
+    
+        PSQL_COMMAND=`command -v psql`
     fi
-else
-    echo "PostgreSQL already running"
-fi
 
-echo "Checking database connectivity"
+    echo "Using PostgreSQL command: $PSQL_COMMAND"
+}
 
-# test for a valid Maestro user
-OUTPUT=`PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER 2>&1`
-if [ $? -eq 0 ]; then
-    echo "Valid Maestro PostgreSQL user found"
-else
-    echo $OUTPUT
-    if [[ ! -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
-        echo "PostgreSQL pg_hba.conf not configured for password authentication via TCP/IP.  Please ensure that PostgreSQL is configured to listen for connections on $PORT and that password auth is configured and higher in priority than ident auth.  The credentials should match those in $MAESTRO_LUCEE_CONFIG.  Restarting PostgreSQL will be necessary for changes to postgresql.conf or pg_hba.conf."
-        echo ""
-        echo "Example entry for /var/lib/pgsql/data/postgresql.conf:"
-        echo "    listen_addresses = 'localhost'"
-        echo ""
-        echo "Example entry for /var/lib/pgsql/data/pg_hba.conf:"
-        echo "    host    all         all         127.0.0.1/32          md5"
-        echo "    host    all         all         ::1/128               md5"
+verify_db_user() {
+    echo "Checking database connectivity"
+
+    if [ $DB_PASS == "" ]; then
+        echo "Invalid Maestro PostgreSQL password found (empty)"
         exit 1
     fi
 
-    echo "No valid Maestro PostgreSQL user found"
+    # test for a valid Maestro user
+    OUTPUT=`PGPASSWORD="$DB_PASS" psql -l -h $DB_HOST -p $DB_PORT -U $DB_USER 2>&1`
+    if [ $? -eq 0 ]; then
+        echo "Valid Maestro PostgreSQL user found"
+        return 1
+    else
+        echo $OUTPUT
+
+        if [[ ! -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
+            echo "PostgreSQL pg_hba.conf not configured for password authentication via TCP/IP.  Please ensure that PostgreSQL is configured to listen for connections on host=$DB_HOST port=$DB_PORT' and that password auth is configured and higher in priority than ident auth.  The credentials should match those in '$MAESTRO_LUCEE_CONFIG'.  Restarting PostgreSQL will be necessary for changes to postgresql.conf or pg_hba.conf."
+            echo ""
+            echo "Example entry for /var/lib/pgsql/data/postgresql.conf:"
+            echo "    listen_addresses = '$DB_HOST' # specify the correct listen address here"
+            echo ""
+            echo "Example entry for /var/lib/pgsql/data/pg_hba.conf (specify the IP address this Maestro server will connect from):"
+            echo "    host    all         all         127.0.0.1/32          md5"
+            echo "    host    all         all         ::1/128               md5"
+            exit 1
+        fi
+
+        echo "No valid Maestro PostgreSQL user found"
+        return 0
+    fi
+}
+
+create_db_user() {
     read -u 1 -r -p "Would you like to configure a Maestro PostgreSQL user now? [y/N] " response
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro PostgreSQL user..."
-            su - postgres -c "psql -c \"CREATE ROLE $USER UNENCRYPTED PASSWORD '$PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" &> /dev/null
+            su - postgres -c "psql -c \"CREATE ROLE $DB_USER UNENCRYPTED PASSWORD '$DB_PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" &> /dev/null
 
             RETVAL=$?
             if [ $RETVAL -ne 0 ]; then
@@ -320,176 +461,116 @@ else
             exit 1
             ;;
     esac
-fi
+}
 
-# check for maestro db
-PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER maestro &> /dev/null
-if [ $? -eq 0 ]; then
-    echo "Maestro database found"
-else
-    read -u 1 -r -p "Would you like to create the Maestro database now? [y/N] " response
-    case $response in
-        [yY][eE][sS]|[yY]) 
-            echo -n "Creating Maestro PostgreSQL database..."
-            su - postgres -c "createdb -O maestro maestro" &> /dev/null
-            RETVAL=$?
+ensure_db_exists() {
+    DATABASE=$1
 
-            if [ $RETVAL -ne 0 ]; then
-                echo "failed"
-                echo "Failed to connect with HOST=$HOST PORT=$PORT USER=$USER DB=maestro, please check PostgreSQL installation and settings in $CONFIG"
-                exit 1
-            fi
-            echo "success"
-            
-            ;;
-        *)
-            echo "Failed to connect with HOST=$HOST PORT=$PORT USER=$USER DB=maestro, please check PostgreSQL installation and settings in $CONFIG"
-            exit 1
-            ;;
-    esac
-fi
-
-# check for luceedb db
-PGPASSWORD="$PASS" psql -l -h $HOST -p $PORT -U $USER $DATABASE &> /dev/null
-if [ $? -eq 0 ]; then
-    echo "Maestro LuCEE database found"
-else
-    read -u 1 -r -p "Would you like to create the Maestro LuCEE database now? [y/N] " response
-    case $response in
-        [yY][eE][sS]|[yY]) 
-            echo -n "Creating Maestro LuCEE PostgreSQL database..."
-            su - postgres -c "createdb -O maestro $DATABASE" &> /dev/null
-            RETVAL=$?
-
-            if [ $RETVAL -ne 0 ]; then
-                echo "failed"
-                echo "Failed to connect with HOST=$HOST PORT=$PORT USER=$USER DB=$DATABASE, please check PostgreSQL installation and settings in $CONFIG"
-                exit 1
-            fi
-            echo "success"
-            
-            ;;
-        *)
-            echo "Failed to connect with HOST=$HOST PORT=$PORT USER=$USER DB=$DATABASE, please check PostgreSQL installation and settings in $CONFIG"
-            exit 1
-            ;;
-    esac
-fi
-
-# ensure activemq will start on boot
-/sbin/chkconfig activemq on
-
-# ensure activemq is runnning
-if [[ -z `/sbin/service activemq status | grep 'is running'` ]]; then
-    echo -n "Starting ActiveMQ..."
-    /sbin/service activemq start &> /dev/null
-    RETVAL=$?
-
-    if [ $RETVAL -ne 0 ]; then
-        echo "failed"
-        exit 1
-    fi
-
-    echo "success"
-else
-    echo "ActiveMQ is running"
-fi
-
-# ensure mongo will start on boot
-/sbin/chkconfig mongod on
-
-# ensure mongo is runnning
-if [[ -z `/sbin/service mongod status | grep 'is running'` ]]; then
-    echo -n "Starting MongoDB..."
-    /sbin/service mongod start &> /dev/null
-    RETVAL=$?
-
-    if [ $RETVAL -ne 0 ]; then
-        echo "failed"
-        exit 1
-    fi
-
-    echo "success"
-else
-    echo "MongoDB is running"
-fi
-
-# ensure maestro agent is running
-if [[ -z `/sbin/service maestro-agent status | grep 'is running'` ]]; then
-    echo -n "Starting Maestro Agent..."
-    /sbin/service maestro-agent start &> /dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "failed"
-        exit 1
-    fi
-
-    echo "success"
-else
-    echo "Maestro Agent is running"
-fi
-
-# ensure maestro is running
-if [[ -z `/sbin/service maestro status | grep 'is running'` ]]; then
-    echo -n "Starting Maestro..."
-    /sbin/service maestro start &> /dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "failed"
-        exit 1
-    fi
-
-    echo "success"
-else
-    echo "Maestro is running"
-fi
-
-echo -n "Checking if LuCEE is available for plugin installation..."
-
-# check if LuCEE is ready to install plugins
-$MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-    echo "not ready"
-
-    # wait for LuCEE to start
-    LUCEE_STARTED=0
-    START_TIME=$(date +%s)
-    echo -n "Waiting for LuCEE to become available..."
-    while [ $LUCEE_STARTED -eq 0 ]; do 
-        $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
-    
-        if [ $? -ne 0 ]; then
-            echo -n "."
-            END_TIME=$(date +%s)
-            TOTAL_TIME=$(($END_TIME - $START_TIME))
-            if [ $TOTAL_TIME -gt $MAX_LUCEE_WAIT_TIME ]; then
-                echo "\nFailed: LuCEE took too long to start"
-                exit 1
-            fi
-            sleep 5
+    # check for maestro db
+    PGPASSWORD="$DB_PASS" psql -l -h $DB_HOST -p $DB_PORT -U $DB_USER $DATABASE &> /dev/null
+    if [ $? -eq 0 ]; then
+        echo "Maestro database '$DATABASE' found"
+    else
+        echo "Maestro database '$DATABASE' not found"
+        if [ is_local_db ]; then
+            read -u 1 -r -p "Would you like to create the '$DATABASE' database now? [y/N] " response
+            case $response in
+                [yY][eE][sS]|[yY]) 
+                    echo -n "Creating Maestro PostgreSQL database '$DATABASE'..."
+                    su - postgres -c "createdb -O maestro $DATABASE" &> /dev/null
+                    RETVAL=$?
+        
+                    if [ $RETVAL -ne 0 ]; then
+                        echo "failed"
+                        echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$CONFIG'"
+                        exit 1
+                    fi
+                    echo "success"
+                    
+                    ;;
+                *)
+                    echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$CONFIG'"
+                    exit 1
+                    ;;
+            esac
         else
-            echo "running"
-            break
+            echo "\nPlease ensure the database settings in '$MAESTRO_LUCEE_CONFIG' are correct (host=$DB_HOST, port=$DB_PORT) and that the '$DATABASE' database exists"
+            exit 1
         fi
-    done
-else
-    echo "ready"
-fi
+    fi
+}
 
-# install some plugins
-echo "Installing Maestro Plugins"
-if [ $ENABLE_SNAPSHOTS -eq 0 ]; then
-    $MAESTRO_BIN/maestro-plugins install all
-else
-    $MAESTRO_BIN/maestro-plugins --snapshots install all
-fi
-RETVAL=$?
-if [ $RETVAL -ne 0 ]; then
-    echo "Failed to install Maestro Plugins"
-    exit 1
-fi
-echo "Installed Maestro Plugins"
+install_maestro_plugins() {
+    echo -n "Checking if LuCEE is available for plugin installation..."
+    
+    # check if LuCEE is ready to install plugins
+    $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "not ready"
+    
+        # wait for LuCEE to start
+        LUCEE_STARTED=0
+        START_TIME=$(date +%s)
+        echo -n "Waiting for LuCEE to become available..."
+        while [ $LUCEE_STARTED -eq 0 ]; do 
+            $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
+        
+            if [ $? -ne 0 ]; then
+                echo -n "."
+                END_TIME=$(date +%s)
+                TOTAL_TIME=$(($END_TIME - $START_TIME))
+                if [ $TOTAL_TIME -gt $MAX_LUCEE_WAIT_TIME ]; then
+                    echo "\nFailed: LuCEE took too long to start"
+                    exit 1
+                fi
+                sleep 5
+            else
+                echo "running"
+                break
+            fi
+        done
+    else
+        echo "ready"
+    fi
+    
+    # install some plugins
+    echo "Installing Maestro Plugins"
+    if [ $ENABLE_SNAPSHOTS -eq 0 ]; then
+        $MAESTRO_BIN/maestro-plugins install all
+    else
+        $MAESTRO_BIN/maestro-plugins --snapshots install all
+    fi
+    RETVAL=$?
+    if [ $RETVAL -ne 0 ]; then
+        echo "Failed to install Maestro Plugins"
+        exit 1
+    fi
+    echo "Installed Maestro Plugins"
+}
 
-echo "Installation complete."
-echo "Please check logs in $MAESTRO_BASE/logs and $MAESTRO_AGENT_BASE/logs for troubleshooting."
-echo "Ensure that your firewall is configured to allow remote access to port 8080 and browse to http://$HOSTNAME:8080/"
+ensure_package_installed() {
+    if ! rpm -qa | grep $1 2>&1 > /dev/null; then
+        echo "Installing package '$1'"
+        yum -y install $1
+
+        RETVAL=$?
+        if [ $RETVAL -ne 0 ]; then
+            echo "Unable to install package '$1'"
+            exit 1
+        fi
+    fi
+}
+
+ensure_service_running() {
+    if [[ -z `/sbin/service $1 status | grep 'is running'` ]]; then
+        echo -n "Starting '$1'..."
+        /sbin/service $1 start &> /dev/null 2>&1
+        RETVAL=$?
+        if [ $RETVAL -ne 0 ]; then
+            echo "Unable to start service '$1'"
+            exit 1
+        fi
+    fi
+}
+
+main "$@"

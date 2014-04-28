@@ -10,7 +10,9 @@ MAESTRO_AGENT_BASE=/var/local/maestro-agent
 HOSTNAME=`hostname -f`
 PGDATA=/var/lib/pgsql/data
 
+MAX_SERVICE_WAIT_TIME=60
 MAX_LUCEE_WAIT_TIME=300
+MAX_ACTIVEMQ_WAIT_TIME=60
 
 # catch ctrl-c and stop the script from continuing
 trap 'echo "Maestro install interrupted"; exit' INT
@@ -44,20 +46,24 @@ main() {
     #ensure_package_installed 'java7-devel'
 
     load_lucee_config
-    if [ is_local_db ]; then
+    is_local_db 
+    if [ $? -eq 0 ]; then
         echo "Using local PostgreSQL"
         verify_db_installation
     fi
-
-    if [ ! verify_db_user ]; then
+    
+    verify_db_user 
+    if [ $? -eq 1 ]; then
         create_db_user
     fi
     ensure_db_exists $DB_DATABASE
     ensure_db_exists 'maestro'
-    
-    if [ is_local_stomp ]; then
+   
+    is_local_stomp  
+    if [ $? -eq 0 ]; then
         echo "Using local ActiveMQ"
         ensure_service_running 'activemq'
+        wait_for_activemq
     fi
     verify_stomp
     
@@ -96,7 +102,8 @@ load_credentials() {
         echo "Loading account credentials from '$MAESTRO_CONFIG_DIR/maestro-account.properties'"
         . $MAESTRO_CONFIG_DIR/maestro-account.properties
     
-        if ! valid_credentials; then
+        valid_credentials
+        if [ $? -ne 0 ]; then
             echo "Invalid credentials specified"
             prompt_credentials
             OVERRIDE_CONFIG=1
@@ -292,22 +299,22 @@ load_lucee_config() {
     
 is_local_db() {
     if [[ $DB_HOST == "localhost" || $DB_HOST == "127.0.0.1" ]]; then
-        return 1
+        return 0
     fi
-    return 0
+    return 1
 }
     
 is_local_stomp() {
     if [ $STOMP_HOST == "localhost" ] || [ $STOMP_HOST == "127.0.0.1" ]; then
-        return 1
+        return 0
     fi
-    return 0
+    return 1
 }
 
 verify_stomp() {
     # attempt to connect to the stomp server
     
-    echo "Checking Stomp connectivity"
+    echo "Checking Stomp connectivity..."
 
     ensure_package_installed 'perl-Net-Stomp'
 
@@ -321,7 +328,7 @@ my $stomp = Net::Stomp->new( { hostname => $host, port => $port } );
 my $con = $stomp->connect( { 
     login => $user, 
     passcode => $pass,
-    timeout => 1.0
+    timeout => 10.0
 } );
 if ($con->command ne "CONNECTED") {
    print "Error connecting via STOMP\n";
@@ -382,7 +389,10 @@ verify_db_installation() {
         ensure_package_installed 'postgresql-server'
     fi
 
-    if is_package_installed 'postgresql-server' ; then
+    is_package_installed 'postgresql-server'
+    if [ $? -eq 0 ]; then
+        echo "Checking that PostgreSQL is initialized"
+
         # verify that we're initialized
         if [ ! -f "$PGDATA/PG_VERSION" ] || [ ! -d "$PGDATA/base" ]; then
             echo -n "Initializing PostgreSQL..."
@@ -399,9 +409,11 @@ verify_db_installation() {
         fi
         
         # ensure postgresql is set to start on startup
+        echo "Setting PostgreSQL to start on boot"
         /sbin/chkconfig postgresql on
 
         # ensure that it's running
+        echo "Ensure PostgreSQL is running"
         ensure_service_running 'postgresql'
     fi
     
@@ -422,9 +434,9 @@ verify_db_user() {
     OUTPUT=`PGPASSWORD="$DB_PASS" psql -l -h $DB_HOST -p $DB_PORT -U $DB_USER 2>&1`
     if [ $? -eq 0 ]; then
         echo "Valid Maestro PostgreSQL user found"
-        return 1
+        return 0
     else
-        echo $OUTPUT
+        echo "Error: $OUTPUT"
 
         if [[ ! -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
             echo "PostgreSQL pg_hba.conf not configured for password authentication via TCP/IP.  Please ensure that PostgreSQL is configured to listen for connections on host=$DB_HOST port=$DB_PORT' and that password auth is configured and higher in priority than ident auth.  The credentials should match those in '$MAESTRO_LUCEE_CONFIG'.  Restarting PostgreSQL will be necessary for changes to postgresql.conf or pg_hba.conf."
@@ -439,7 +451,7 @@ verify_db_user() {
         fi
 
         echo "No valid Maestro PostgreSQL user found"
-        return 0
+        return 1
     fi
 }
 
@@ -448,11 +460,12 @@ create_db_user() {
     case $response in
         [yY][eE][sS]|[yY]) 
             echo -n "Creating Maestro PostgreSQL user..."
-            su - postgres -c "psql -c \"CREATE ROLE $DB_USER UNENCRYPTED PASSWORD '$DB_PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" &> /dev/null
+            OUTPUT=`su - postgres -c "psql -c \"CREATE ROLE $DB_USER UNENCRYPTED PASSWORD '$DB_PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" 2>&1`
 
             RETVAL=$?
             if [ $RETVAL -ne 0 ]; then
                 echo "failed"
+				echo "Error: $OUTPUT";
                 exit 1
             fi
             echo "success"
@@ -474,17 +487,19 @@ ensure_db_exists() {
         echo "Maestro database '$DATABASE' found"
     else
         echo "Maestro database '$DATABASE' not found"
-        if [ is_local_db ]; then
+        is_local_db 
+        if [ $? -eq 0 ]; then
             read -u 1 -r -p "Would you like to create the '$DATABASE' database now? [y/N] " response
             case $response in
                 [yY][eE][sS]|[yY]) 
                     echo -n "Creating Maestro PostgreSQL database '$DATABASE'..."
-                    su - postgres -c "createdb -O maestro $DATABASE" &> /dev/null
+                    OUTPUT=`su - postgres -c "createdb -O maestro $DATABASE" 2>&1`
                     RETVAL=$?
         
                     if [ $RETVAL -ne 0 ]; then
                         echo "failed"
                         echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
+				        echo "Error: $OUTPUT";
                         exit 1
                     fi
                     echo "success"
@@ -502,6 +517,40 @@ ensure_db_exists() {
     fi
 }
 
+wait_for_activemq() {
+    # wait for activemq
+    START_TIME=$(date +%s)
+
+    ensure_package_installed 'perl-Net-Stomp'
+
+    echo -n "Waiting for 'activemq' to become available..."
+    while [ 1 -eq 1 ]; do 
+
+        PERL=$(cat<<"__PERL__"
+use Net::Stomp;
+my $host = shift @ARGV;
+my $port = shift @ARGV;
+my $stomp = Net::Stomp->new( { hostname => $host, port => $port } );
+__PERL__
+)
+        perl -e "$PERL" $STOMP_HOST $STOMP_PORT $STOMP_USER $STOMP_PASS &> /dev/null
+        if [ $? -ne 0 ]; then
+            echo -n "."
+            END_TIME=$(date +%s)
+            TOTAL_TIME=$(($END_TIME - $START_TIME))
+            if [ $TOTAL_TIME -gt $MAX_ACTIVEMQ_WAIT_TIME ]; then
+                echo "\nFailed: ActiveMQ took too long to become available"
+                exit 1
+            fi
+            sleep 5
+        else
+            sleep 1
+            echo "available"
+            break
+        fi
+    done
+}
+
 install_maestro_plugins() {
     echo -n "Checking if LuCEE is available for plugin installation..."
     
@@ -511,10 +560,9 @@ install_maestro_plugins() {
         echo "not ready"
     
         # wait for LuCEE to start
-        LUCEE_STARTED=0
         START_TIME=$(date +%s)
         echo -n "Waiting for LuCEE to become available..."
-        while [ $LUCEE_STARTED -eq 0 ]; do 
+        while [ 1 -eq 1 ]; do 
             $MAESTRO_BIN/maestro-plugins list > /dev/null 2>&1
         
             if [ $? -ne 0 ]; then
@@ -551,14 +599,14 @@ install_maestro_plugins() {
 }
 
 is_package_installed() {
-    if rpm -qa | grep $1 2>&1 > /dev/null; then
-        return 1
+    if (rpm -qa | grep $1 &> /dev/null); then
+        return 0
     fi
-    return 0
+    return 1
 }
 
 ensure_package_installed() {
-    if ! rpm -qa | grep $1 2>&1 > /dev/null; then
+    if ! (rpm -qa | grep $1 &> /dev/null); then
         echo "Installing package '$1'"
         yum -y install $1
 
@@ -572,13 +620,28 @@ ensure_package_installed() {
 
 ensure_service_running() {
     if [[ -z `/sbin/service $1 status | grep 'is running'` ]]; then
-        echo -n "Starting '$1'..."
+        echo "Starting '$1'..."
         /sbin/service $1 start &> /dev/null 2>&1
-        RETVAL=$?
-        if [ $RETVAL -ne 0 ]; then
-            echo "Unable to start service '$1'"
-            exit 1
-        fi
+
+        # wait for service to start
+        START_TIME=$(date +%s)
+        echo -n "Waiting for '$1' to start..."
+        while [ 1 -eq 1 ]; do 
+            if [[ -z `/sbin/service $1 status | grep 'is running'` ]]; then
+                echo -n "."
+                END_TIME=$(date +%s)
+                TOTAL_TIME=$(($END_TIME - $START_TIME))
+                if [ $TOTAL_TIME -gt $MAX_SERVICE_WAIT_TIME ]; then
+                    echo "\nFailed: '$1' took too long to start"
+                    exit 1
+                fi
+                # give it a couple more second to settle
+                sleep 2
+            else
+                echo "running"
+                break
+            fi
+        done
     fi
 }
 

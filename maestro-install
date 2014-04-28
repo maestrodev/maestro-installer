@@ -380,17 +380,19 @@ verify_db_installation() {
 
         # install the default postgresql package for CentOS if nothign is currently installed
         ensure_package_installed 'postgresql-server'
+    fi
         
-        # ensure postgresql is set to start on startup
-        /sbin/chkconfig postgresql on
+    # ensure postgresql is set to start on startup
+    /sbin/chkconfig postgresql on
 
-        # ensure that it's running
-        ensure_service_running 'postgresql'
+    # ensure that it's running
+    ensure_service_running 'postgresql'
 
+    if is_package_installed 'postgresql-server' ; then
         # verify that we're initialized
         if [ ! -f "$PGDATA/PG_VERSION" ] || [ ! -d "$PGDATA/base" ]; then
             echo -n "Initializing PostgreSQL..."
-    
+        
             # try to initialize the database first
             /sbin/service postgresql initdb &> /dev/null
             RETVAL=$?
@@ -401,9 +403,9 @@ verify_db_installation() {
             fi
             echo "success"
         fi
-    
-        PSQL_COMMAND=`command -v psql`
     fi
+    
+    PSQL_COMMAND=`command -v psql`
 
     echo "Using PostgreSQL command: $PSQL_COMMAND"
 }
@@ -546,6 +548,13 @@ install_maestro_plugins() {
         exit 1
     fi
     echo "Installed Maestro Plugins"
+}
+
+is_package_installed() {
+    if rpm -qa | grep $1 2>&1 > /dev/null; then
+        return 1
+    fi
+    return 0
 }
 
 ensure_package_installed() {

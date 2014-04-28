@@ -30,7 +30,7 @@ fi
 main() {
     load_credentials
 
-    check_enable_snapshots
+    check_enable_snapshots $1
     install_epel_repo
     install_maestrodev_repo
     install_maestro

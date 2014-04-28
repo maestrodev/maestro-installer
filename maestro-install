@@ -381,12 +381,6 @@ verify_db_installation() {
         # install the default postgresql package for CentOS if nothign is currently installed
         ensure_package_installed 'postgresql-server'
     fi
-        
-    # ensure postgresql is set to start on startup
-    /sbin/chkconfig postgresql on
-
-    # ensure that it's running
-    ensure_service_running 'postgresql'
 
     if is_package_installed 'postgresql-server' ; then
         # verify that we're initialized
@@ -403,6 +397,12 @@ verify_db_installation() {
             fi
             echo "success"
         fi
+        
+        # ensure postgresql is set to start on startup
+        /sbin/chkconfig postgresql on
+
+        # ensure that it's running
+        ensure_service_running 'postgresql'
     fi
     
     PSQL_COMMAND=`command -v psql`

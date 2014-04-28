@@ -482,14 +482,14 @@ ensure_db_exists() {
         
                     if [ $RETVAL -ne 0 ]; then
                         echo "failed"
-                        echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$CONFIG'"
+                        echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
                         exit 1
                     fi
                     echo "success"
                     
                     ;;
                 *)
-                    echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$CONFIG'"
+                    echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
                     exit 1
                     ;;
             esac

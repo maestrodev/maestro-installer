@@ -439,14 +439,23 @@ verify_db_user() {
         echo "Error: $OUTPUT"
 
         if [[ ! -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
-            echo "PostgreSQL pg_hba.conf not configured for password authentication via TCP/IP.  Please ensure that PostgreSQL is configured to listen for connections on host=$DB_HOST port=$DB_PORT' and that password auth is configured and higher in priority than ident auth.  The credentials should match those in '$MAESTRO_LUCEE_CONFIG'.  Restarting PostgreSQL will be necessary for changes to postgresql.conf or pg_hba.conf."
+            echo "PostgreSQL pg_hba.conf not configured for password authentication via
+            TCP/IP. Please ensure that PostgreSQL is configured to listen on
+            host=$DB_HOST port=$DB_PORT and allow password authentication."
             echo ""
+            echo "!!! THESE CHANGES REQUIRE PostgreSQL TO BE RESTARTED !!!"
+            echo ""
+            echo "###"
             echo "Example entry for /var/lib/pgsql/data/postgresql.conf:"
             echo "    listen_addresses = '$DB_HOST' # specify the correct listen address here"
             echo ""
-            echo "Example entry for /var/lib/pgsql/data/pg_hba.conf (specify the IP address this Maestro server will connect from):"
-            echo "    host    all         all         127.0.0.1/32          md5"
-            echo "    host    all         all         ::1/128               md5"
+            echo "###"
+            echo "Example entry for /var/lib/pgsql/data/pg_hba.conf:"
+            echo "- substitue the correct source IP address for this Maestro server"
+            echo "- password auth must be defined before ident auth for the same host"
+            echo ""
+            echo "host    all         all         127.0.0.1/32          md5"
+            echo "host    all         all         ::1/128               md5"
             exit 1
         fi
 
@@ -465,7 +474,7 @@ create_db_user() {
             RETVAL=$?
             if [ $RETVAL -ne 0 ]; then
                 echo "failed"
-				echo "Error: $OUTPUT";
+                echo "Error: $OUTPUT";
                 exit 1
             fi
             echo "success"
@@ -499,7 +508,7 @@ ensure_db_exists() {
                     if [ $RETVAL -ne 0 ]; then
                         echo "failed"
                         echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
-				        echo "Error: $OUTPUT";
+                        echo "Error: $OUTPUT";
                         exit 1
                     fi
                     echo "success"

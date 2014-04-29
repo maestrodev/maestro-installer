@@ -439,6 +439,7 @@ verify_db_user() {
         echo "Error: $OUTPUT"
 
         if [[ ! -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
+            echo ""
             echo "PostgreSQL pg_hba.conf not configured for password authentication via
             TCP/IP. Please ensure that PostgreSQL is configured to listen on
             host=$DB_HOST port=$DB_PORT and allow password authentication."

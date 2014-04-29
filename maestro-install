@@ -452,11 +452,12 @@ verify_db_user() {
             echo ""
             echo "###"
             echo "Example entry for /var/lib/pgsql/data/pg_hba.conf:"
-            echo "- substitue the correct source IP address for this Maestro server"
+            echo "- substitute the correct source IP address for this Maestro server"
             echo "- password auth must be defined before ident auth for the same host"
             echo ""
             echo "host    all         all         127.0.0.1/32          md5"
             echo "host    all         all         ::1/128               md5"
+            echo "local   all         all                               ident"
             exit 1
         fi
 

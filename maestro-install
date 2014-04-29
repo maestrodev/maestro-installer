@@ -549,7 +549,7 @@ __PERL__
             END_TIME=$(date +%s)
             TOTAL_TIME=$(($END_TIME - $START_TIME))
             if [ $TOTAL_TIME -gt $MAX_ACTIVEMQ_WAIT_TIME ]; then
-                echo "\nFailed: ActiveMQ took too long to become available"
+                echo -e "\nFailed: ActiveMQ took too long to become available"
                 exit 1
             fi
             sleep 5
@@ -580,7 +580,7 @@ install_maestro_plugins() {
                 END_TIME=$(date +%s)
                 TOTAL_TIME=$(($END_TIME - $START_TIME))
                 if [ $TOTAL_TIME -gt $MAX_LUCEE_WAIT_TIME ]; then
-                    echo "\nFailed: LuCEE took too long to start"
+                    echo -e "\nFailed: LuCEE took too long to start"
                     exit 1
                 fi
                 sleep 5

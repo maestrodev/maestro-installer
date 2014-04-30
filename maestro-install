@@ -331,7 +331,7 @@ my $con = $stomp->connect( {
     timeout => 10.0
 } );
 if ($con->command ne "CONNECTED") {
-   print "Error connecting via STOMP\n";
+   print STDERR "Error connecting via STOMP\n";
    exit 1;
 } else {
     print "Connection via STOMP okay\n";
@@ -352,9 +352,9 @@ foreach my $queue (@queues) {
             my $body = $frame->body;
             if ($body =~ /not authorized/) {
                 $stomp->ack( { frame => $frame } );
-                print "Permission denied for '$queue'\n";
+                print STDERR "Permission denied for '$queue'\n";
             } else {
-                print "Error connecting to '$queue'\n";
+                print STDERR "Error connecting to '$queue'\n";
             }
             exit 1;
         }
@@ -383,10 +383,13 @@ verify_db_installation() {
     
     # determine if psql exists
     if [ -z $PSQL_COMMAND ]; then
-        echo "No PostgreSQL found, installing"
+        is_package_installed 'postgresql-server'
+        if [ $? -eq 1 ]; then
+            echo "No PostgreSQL found, installing"
 
-        # install the default postgresql package for CentOS if nothign is currently installed
-        ensure_package_installed 'postgresql-server'
+            # install the default postgresql package for CentOS if nothign is currently installed
+            ensure_package_installed 'postgresql-server'
+        fi
     fi
 
     is_package_installed 'postgresql-server'
@@ -436,57 +439,145 @@ verify_db_user() {
         echo "Valid Maestro PostgreSQL user found"
         return 0
     else
-        echo "Error: $OUTPUT"
+        echo "Error: $OUTPUT" >&2
 
         if [[ ! -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
-            echo ""
-            echo "PostgreSQL pg_hba.conf not configured for password authentication via
-            TCP/IP. Please ensure that PostgreSQL is configured to listen on
-            host=$DB_HOST port=$DB_PORT and allow password authentication."
-            echo ""
-            echo "!!! THESE CHANGES REQUIRE PostgreSQL TO BE RESTARTED !!!"
-            echo ""
-            echo "###"
-            echo "Example entry for /var/lib/pgsql/data/postgresql.conf:"
-            echo "    listen_addresses = '$DB_HOST' # specify the correct listen address here"
-            echo ""
-            echo "###"
-            echo "Example entry for /var/lib/pgsql/data/pg_hba.conf:"
-            echo "- substitute the correct source IP address for this Maestro server"
-            echo "- password auth must be defined before ident auth for the same host"
-            echo ""
-            echo "host    all         all         127.0.0.1/32          md5"
-            echo "host    all         all         ::1/128               md5"
-            echo "local   all         all                               ident"
+            # if we have postgresql install locally, try to configure it
+            is_local_db 
+            if [ $? -eq 0 ]; then
+                # configure PostgreSQL defaults
+
+                echo -n "Configuring PostgreSQL to accept TCP/IP connections..."
+
+                # configure to listen on localhost
+                OUTPUT=`sed -e "s/#listen_addresses/listen_addresses/" -ibak /var/lib/pgsql/data/postgresql.conf 2>&1`
+
+                if [ $? -eq 0 ]; then
+                    echo "success"
+                else
+                    echo "failed"
+                    echo "Error: $OUTPUT" >&2;
+                    exit 1
+                fi
+
+                # configure to accept password authentication, if not already configured
+                NEEDED_LINE=$(cat<<"__NEEDEDLINE__"
+^host\s\+all\s\+all\s\+127.0.0.1\/32\s\+md5
+__NEEDEDLINE__
+)
+                grep -e "$NEEDED_LINE" /var/lib/pgsql/data/pg_hba.conf &> /dev/null
+                if [ $? -eq 1 ]; then
+                    echo -n "Configuring PostgreSQL to accept password authentication..."
+
+                    # configure to accept password authentication
+                    SEARCH_LINE=$(cat<<"__SEARCHLINE__"
+^#\s\+TYPE\s\+DATABASE\s\+USER\s\+CIDR-ADDRESS\s\+METHOD$
+__SEARCHLINE__
+)
+                    REPLACE_LINE=$(cat<<"__REPLACELINE__"
+# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD\n\
+host    all         all         127.0.0.1\/32          md5\n\
+host    all         all         ::1\/128               md5
+__REPLACELINE__
+)
+                    OUTPUT=`sed -e "s/$SEARCH_LINE/$REPLACE_LINE/" -ibak /var/lib/pgsql/data/pg_hba.conf 2>&2`
+
+                    if [ $? -eq 0 ]; then
+                        grep -e "$NEEDED_LINE" /var/lib/pgsql/data/pg_hba.conf &> /dev/null
+                        if [ $? -eq 0 ]; then
+                            echo "success"
+                        else
+                            echo "failed"
+                            echo -e $(cat<<"__ERROR__"
+Please check your PostgreSQL configuration and ensure that password\n
+authentication is enabled.\n
+\n
+Example entry for /var/lib/pgsql/data/pg_hba.conf:\n
+- substitute the correct source IP address for this Maestro server\n
+- password auth must be defined before ident auth for the same host\n
+\n
+host    all         all         127.0.0.1/32          md5\n
+host    all         all         ::1/128               md5\n
+local   all         all                               ident\n
+__ERROR__
+) >&2
+                        fi
+                    else
+                        echo "failed"
+                        echo "Error: $OUTPUT" >&2;
+                        exit 1
+                    fi
+                fi
+
+                # try to connect again
+
+                # restart postgresql
+                echo "Restart PostgreSQL with new settings"
+                service_restart 'postgresql'
+
+                echo "Ensure PostgreSQL is running"
+                ensure_service_running 'postgresql'
+
+                echo "Checking database connectivity again"
+
+                # test for a valid Maestro user
+                OUTPUT=`PGPASSWORD="$DB_PASS" psql -l -h $DB_HOST -p $DB_PORT -U $DB_USER 2>&1`
+                if [ $? -eq 0 ]; then
+                    echo "Valid Maestro PostgreSQL user found"
+                    return 0
+                else
+                    echo "Error: $OUTPUT" >&2
+
+                    if [[ -z `echo $OUTPUT | grep 'Ident authentication failed for user'` ]]; then
+                        # not an ident user, so we may continue with creating a user, return nice
+                        return 1
+                    fi
+
+                    # ident problem still, exit with general pg config error
+                fi
+            fi
+
+            # else, the db is remote and we'll print general error
+            echo -e $(cat<<"__ERROR__"
+PostgreSQL pg_hba.conf not configured for password authentication via\n
+TCP/IP. Please ensure that PostgreSQL is configured to listen on\n
+host=$DB_HOST port=$DB_PORT and allow password authentication.\n
+\n
+!!! THESE CHANGES REQUIRE PostgreSQL TO BE RESTARTED !!!\n
+\n
+###\n
+Example entry for /var/lib/pgsql/data/postgresql.conf:\n
+    listen_addresses = '$DB_HOST' # specify the correct listen address here\n
+\n
+###\n
+Example entry for /var/lib/pgsql/data/pg_hba.conf:\n
+- substitute the correct source IP address for this Maestro server\n
+- password auth must be defined before ident auth for the same host\n
+\n
+host    all         all         127.0.0.1/32          md5\n
+host    all         all         ::1/128               md5\n
+local   all         all                               ident\n
+__ERROR__
+) >&2
             exit 1
         fi
-
-        echo "No valid Maestro PostgreSQL user found"
-        return 1
     fi
+
+    echo "No valid Maestro PostgreSQL user found"
+    return 1
 }
 
 create_db_user() {
-    read -u 1 -r -p "Would you like to configure a Maestro PostgreSQL user now? [y/N] " response
-    case $response in
-        [yY][eE][sS]|[yY]) 
-            echo -n "Creating Maestro PostgreSQL user..."
-            OUTPUT=`su - postgres -c "psql -c \"CREATE ROLE $DB_USER UNENCRYPTED PASSWORD '$DB_PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" 2>&1`
+    echo -n "Creating Maestro PostgreSQL user..."
+    OUTPUT=`su - postgres -c "psql -c \"CREATE ROLE $DB_USER UNENCRYPTED PASSWORD '$DB_PASS' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;\"" 2>&1`
 
-            RETVAL=$?
-            if [ $RETVAL -ne 0 ]; then
-                echo "failed"
-                echo "Error: $OUTPUT";
-                exit 1
-            fi
-            echo "success"
-            
-            ;;
-        *)
-            echo "No valid database user...exiting"
-            exit 1
-            ;;
-    esac
+    RETVAL=$?
+    if [ $RETVAL -ne 0 ]; then
+        echo "failed"
+        echo "Error: $OUTPUT" >&2
+        exit 1
+    fi
+    echo "success"
 }
 
 ensure_db_exists() {
@@ -500,29 +591,19 @@ ensure_db_exists() {
         echo "Maestro database '$DATABASE' not found"
         is_local_db 
         if [ $? -eq 0 ]; then
-            read -u 1 -r -p "Would you like to create the '$DATABASE' database now? [y/N] " response
-            case $response in
-                [yY][eE][sS]|[yY]) 
-                    echo -n "Creating Maestro PostgreSQL database '$DATABASE'..."
-                    OUTPUT=`su - postgres -c "createdb -O maestro $DATABASE" 2>&1`
-                    RETVAL=$?
+            echo -n "Creating Maestro PostgreSQL database '$DATABASE'..."
+            OUTPUT=`su - postgres -c "createdb -O maestro $DATABASE" 2>&1`
+            RETVAL=$?
         
-                    if [ $RETVAL -ne 0 ]; then
-                        echo "failed"
-                        echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
-                        echo "Error: $OUTPUT";
-                        exit 1
-                    fi
-                    echo "success"
-                    
-                    ;;
-                *)
-                    echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
-                    exit 1
-                    ;;
-            esac
+            if [ $RETVAL -ne 0 ]; then
+                echo "failed"
+                echo "Failed to connect with host=$DB_HOST port=$DB_PORT user=$DB_USER db=$DATABASE, please check PostgreSQL installation and settings in '$MAESTRO_LUCEE_CONFIG'"
+                echo "Error: $OUTPUT" >&2
+                exit 1
+            fi
+            echo "success"
         else
-            echo "\nPlease ensure the database settings in '$MAESTRO_LUCEE_CONFIG' are correct (host=$DB_HOST, port=$DB_PORT) and that the '$DATABASE' database exists"
+            echo -e "\nPlease ensure the database settings in '$MAESTRO_LUCEE_CONFIG' are correct (host=$DB_HOST, port=$DB_PORT) and that the '$DATABASE' database exists"
             exit 1
         fi
     fi
@@ -617,7 +698,7 @@ is_package_installed() {
 }
 
 ensure_package_installed() {
-    if ! (rpm -qa | grep $1 &> /dev/null); then
+    if ! (rpm -q $1 &> /dev/null); then
         echo "Installing package '$1'"
         yum -y install $1
 
@@ -626,6 +707,16 @@ ensure_package_installed() {
             echo "Unable to install package '$1'"
             exit 1
         fi
+    fi
+}
+
+service_restart() {
+    echo "Restarting '$1'..."
+    OUTPUT=`/sbin/service $1 restart 2>&1`
+    RETVAL=$?
+    if [ $RETVAL -ne 0 ]; then
+        echo "Unable to restart '$1'"
+        exit 1
     fi
 }
 
@@ -643,7 +734,7 @@ ensure_service_running() {
                 END_TIME=$(date +%s)
                 TOTAL_TIME=$(($END_TIME - $START_TIME))
                 if [ $TOTAL_TIME -gt $MAX_SERVICE_WAIT_TIME ]; then
-                    echo "\nFailed: '$1' took too long to start"
+                    echo -e "\nFailed: '$1' took too long to start"
                     exit 1
                 fi
                 # give it a couple more second to settle

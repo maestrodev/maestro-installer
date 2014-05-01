@@ -39,7 +39,7 @@ main() {
 
     save_credentials
     
-    install_maestro_agent
+    #install_maestro_agent
 
      # test for java
     #ensure_javac
@@ -68,7 +68,7 @@ main() {
     verify_stomp
     
     ensure_service_running 'mongod'
-    ensure_service_running 'maestro-agent'
+    #ensure_service_running 'maestro-agent'
     ensure_service_running 'maestro'
 
     install_maestro_plugins

@@ -1,9 +1,14 @@
 Installing Maestro
 ==================
 
+Pre-requisites
+--------------
+* CentOS 6.5+
+* Root access
+* PostgreSQL database user
+
 Running
 -------
-
 Releases:
 
 <code>
@@ -20,12 +25,6 @@ NOTES:
 * You will need to provide your Maestro Account credentials.
 * The \ must be removed from the command line above when pasting into a terminal.
 * If any temporary failures occur, the installer can safely be run multiple times to resume progress.
-
-Pre-requisites
---------------
-* CentOS 6.5+
-* Root access
-* PostgreSQL database user
  
 System Requirements
 -------------------

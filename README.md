@@ -48,7 +48,7 @@ Snapshots:
 \bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
 </code>
 
-NOTE: You will need to provide your Maestro Account credentials
+NOTE: You will need to provide your Maestro Account credentials.  Also, the \ must be removed from the command line above when pasting into a terminal.
 
 
 PostgreSQL

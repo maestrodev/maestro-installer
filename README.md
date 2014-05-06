@@ -1,12 +1,56 @@
 Installing Maestro
 ==================
 
+Running
+-------
+
+Releases:
+
+<code>
+\bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+</code>
+
+Snapshots:
+
+<code>
+\bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+</code>
+
+NOTES:
+* You will need to provide your Maestro Account credentials.
+* The \ must be removed from the command line above when pasting into a terminal.
+* If any temporary failures occur, the installer can safely be run multiple times to resume progress.
+
 Pre-requisites
 --------------
 * CentOS 6.5+
 * Root access
 * PostgreSQL database user
+ 
+System Requirements
+-------------------
+**Maestro Head - Minimum Requirements:**
+* VM or Physical Machine
+  * 1.7GB+ RAM
+  * 1 core (2+ recommended)
+  * 1.5GB DISK (plus working space for projects, output logging, etc.)
+* CentOS 6.5
+  * root access
+  * base image + updates
+* Network access:
+  * Agent connections (inbound ports: 8080, 61613)
+  * yum.maestrodev.com (outbound ports: 80, 443)
+  * repo.maestrodev.com (outbound ports: 80, 443)
+  * CentOS and EPEL yum repos as needed
 
+**Maestro Agent - Linux - Minimum Requirements:**
+* VM or Physical Machine
+  * 512GB+ RAM (dependent on target workload to be performed)
+  * 1GB DISK (dependent on target workload to be performed)
+* CentOS 6.5
+  * Java 1.6
+* Network access:
+  * Maestro Head (outbound ports: 8080, 61613)
 
 Dependencies
 ------------
@@ -32,27 +76,6 @@ Maestro:
 YUM Repos:
 * EPEL
 * Maestro YUM Repositories
-
-Running
--------
-
-Releases:
-
-<code>
-\bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
-</code>
-
-Snapshots:
-
-<code>
-\bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
-</code>
-
-NOTES:
-* You will need to provide your Maestro Account credentials.
-* The \ must be removed from the command line above when pasting into a terminal.
-* If any temporary failures occur, the installer can safely be run multiple times to resume progress.
-
 
 PostgreSQL
 ----------

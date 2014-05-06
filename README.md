@@ -3,9 +3,9 @@ Installing Maestro
 
 Pre-requisites
 --------------
-CentOS 6.5+
-Root access
-PostgreSQL database user
+* CentOS 6.5+
+* Root access
+* PostgreSQL database user
 
 
 Dependencies

@@ -11,15 +11,21 @@ Running
 -------
 Maestro master server releases:
 
-    \bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+<code>
+\bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+</code>
 
 Maestro agent service:
 
-    \bash -s agent maestro_master_hostname < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+<code>
+\bash -s agent maestro_master_hostname < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+</code>
 
 Maestro master server snapshots:
 
-    \bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+<code>
+\bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+</code>
 
 NOTES:
 * You will need to provide your Maestro Account credentials.

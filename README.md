@@ -21,11 +21,19 @@ Maestro agent service, change `maestro_master_hostname` to point to the Maestro 
 \bash -s agent maestro_master_hostname < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
 </code>
 
+
 Maestro master server snapshots:
 
 <code>
 \bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
 </code>
+
+Maestro agent snapshots:
+
+<code>
+\bash -s agent maestro_master_hostname snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+</code>
+
 
 NOTES:
 * You will need to provide your Maestro Account credentials.

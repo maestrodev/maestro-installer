@@ -33,7 +33,7 @@ fi
 main() {
     load_credentials
 
-    check_enable_snapshots $1
+    check_enable_snapshots "$@"
     install_epel_repo
     install_maestrodev_repo
     save_credentials
@@ -168,8 +168,17 @@ END
 check_enable_snapshots() {
     # determine if we're installing snapshot or release versions
     ENABLE_SNAPSHOTS=0
-    if [ "$1" == "snapshots" ]; then
-        ENABLE_SNAPSHOTS=1
+    while test $# -gt 0
+    do
+        case "$1" in
+            snapshots)
+                ENABLE_SNAPSHOTS=1
+                ;;
+        esac
+        shift
+    done
+
+    if [ $ENABLE_SNAPSHOTS -gt 0 ]; then
         echo "Installing snapshot versions"
     else
         echo "Installing release versions"

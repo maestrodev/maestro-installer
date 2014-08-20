@@ -15,7 +15,7 @@ Maestro master server releases:
 \bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
 </code>
 
-Maestro agent service:
+Maestro agent service, change `maestro_master_hostname` to point to the Maestro master. Can be installed in the same host as the master:
 
 <code>
 \bash -s agent maestro_master_hostname < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )

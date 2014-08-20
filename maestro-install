@@ -6,6 +6,7 @@ MAESTRO_CONFIG_BASE=/var/local/maestro
 MAESTRO_CONFIG_DIR=$MAESTRO_CONFIG_BASE/conf
 MAESTRO_LUCEE_CONFIG="$MAESTRO_CONFIG_DIR/maestro_lucee.json"
 MAESTRO_AGENT_BASE=/var/local/maestro-agent
+MAESTRO_AGENT_CONFIG="$MAESTRO_AGENT_BASE/conf/maestro_agent.json"
 
 HOSTNAME=`hostname -f`
 PGDATA=/var/lib/pgsql/data
@@ -35,11 +36,24 @@ main() {
     check_enable_snapshots $1
     install_epel_repo
     install_maestrodev_repo
+
+    if [ "$1" == "agent" ]; then
+        echo "Installing Maestro agent"
+        if [ "$2" == "" ]; then
+            echo "Installing Maestro agent requires another parameter, the Maestro master hostname"
+            exit 1
+        fi
+        echo "Using Maestro master at $2"
+        install_maestro_agent $2
+        set_stomp_url $2
+        ensure_service_running 'maestro-agent'
+        exit 0
+    fi
+
     install_maestro
 
     save_credentials
     
-    #install_maestro_agent
 
      # test for java
     #ensure_javac
@@ -68,7 +82,6 @@ main() {
     verify_stomp
     
     ensure_service_running 'mongod'
-    #ensure_service_running 'maestro-agent'
     ensure_service_running 'maestro'
 
     install_maestro_plugins
@@ -262,6 +275,22 @@ print $1;
 __PERL__
     )
     cat $MAESTRO_LUCEE_CONFIG | perl -e "$PERL"
+}
+
+set_stomp_url() {
+    PERL=$(cat<<__PERL__
+use JSON::XS;
+undef \$/;
+\$config = <STDIN>;
+\$/ = "\n";
+my \$json = decode_json \$config;
+\$json->{'agent'}->{'stomp'}->{'url'} = "stomp://maestro:maestro\@$1:61613";
+print JSON::XS->new->pretty(1)->encode (\$json);
+__PERL__
+    )
+    cp $MAESTRO_AGENT_CONFIG $MAESTRO_AGENT_CONFIG.bak
+    cat $MAESTRO_AGENT_CONFIG.bak | perl -e "$PERL" > $MAESTRO_AGENT_CONFIG
+    /sbin/service maestro-agent restart
 }
 
 load_lucee_config() {

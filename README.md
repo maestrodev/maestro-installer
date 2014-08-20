@@ -9,17 +9,17 @@ Pre-requisites
 
 Running
 -------
-Releases:
+Maestro master server releases:
 
-<code>
-\bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
-</code>
+    \bash < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
 
-Snapshots:
+Maestro agent service:
 
-<code>
-\bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
-</code>
+    \bash -s agent maestro_master_hostname < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
+
+Maestro master server snapshots:
+
+    \bash -s snapshots < <( curl -sL https://raw.githubusercontent.com/maestrodev/maestro-installer/master/maestro-install )
 
 NOTES:
 * You will need to provide your Maestro Account credentials.
@@ -81,16 +81,16 @@ PostgreSQL
 
 The basic PostgreSQL settings for Maestro to connect to PostgreSQL are listed below.
 
-/var/lib/pgsql/data/postgresql.conf:
+`/var/lib/pgsql/data/postgresql.conf`:
 
     listen_addresses = 'localhost'    # comment out this line to enable TCP/IP connections
 
-/var/lib/pgsql/data/pg_hba.conf:
+`/var/lib/pgsql/data/pg_hba.conf`:
 
     host    all         all         127.0.0.1/32          md5    # enable connections to localhost
     host    all         all         ::1/128               md5    # enable connections to localhost via IPV6
 
 
 NOTE: You will be prompted to create a Maestro database user and databases, which match the settings in
-/var/local/maestro/conf/maestro_lucee.json
+`/var/local/maestro/conf/maestro_lucee.json`
 

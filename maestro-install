@@ -36,7 +36,6 @@ main() {
     check_enable_snapshots "$@"
     install_epel_repo
     install_maestrodev_repo
-    save_credentials
 
     if [ "$1" == "agent" ]; then
         echo "Installing Maestro agent"
@@ -53,6 +52,7 @@ main() {
     fi
 
     install_maestro
+    save_credentials
     
 
      # test for java

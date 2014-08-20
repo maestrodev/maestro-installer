@@ -45,6 +45,7 @@ main() {
         fi
         echo "Using Maestro master at $2"
         install_maestro_agent $2
+        ensure_package_installed 'perl-JSON-XS'
         set_stomp_url $2
         ensure_service_running 'maestro-agent'
         exit 0
